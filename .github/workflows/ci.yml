@@ -21,8 +21,9 @@ jobs:
           java-version: 11
       - name: Build and unit tests
         run: ./gradlew clean build
-      - name: Code coverage
-        run: ./gradlew jacocoTestReport
+# TODO: Uncomment after using Java 17 Runtime
+#      - name: Code coverage
+#        run: ./gradlew jacocoTestReport
       - name: Sonarcube Analysis
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

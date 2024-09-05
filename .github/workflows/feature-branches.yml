@@ -15,5 +15,6 @@ jobs:
         run: ./gradlew clean test
       - name: Code coverage
         run: ./gradlew jacocoTestReport
-      - name: Sonarcube Analysis
-        run: ./gradlew sonarqube
+# TODO: Uncomment after using Java 17 Runtime
+#      - name: Sonarcube Analysis
+#        run: ./gradlew sonarqube
