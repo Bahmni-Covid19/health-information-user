@@ -5,6 +5,7 @@ import lombok.SneakyThrows;
 import lombok.Value;
 
 import java.time.LocalDateTime;
+import java.util.List;
 
 @Value
 public class ConsentRequestRepresentation {
@@ -15,11 +16,15 @@ public class ConsentRequestRepresentation {
     LocalDateTime expiredDate;
     LocalDateTime createdDate;
     LocalDateTime approvedDate;
+    LocalDateTime dateModified;
+    Permission permission;
+    List<HIType> hiTypes;
+    List<ConsentArtefactRepresentation> consentArtefacts;
 
     @SneakyThrows
     public static ConsentRequestRepresentation toConsentRequestRepresentation(
             Patient patient,
-            in.org.projecteka.hiu.consent.model.ConsentRequest consentRequest, String consentRequestId) {
+            in.org.projecteka.hiu.consent.model.ConsentRequest consentRequest, String consentRequestId, List<ConsentArtefactRepresentation> consentArtefacts, LocalDateTime dateModified) {
         return new ConsentRequestRepresentation(
                 consentRequest.getId(),
                 consentRequestId,
@@ -30,7 +35,11 @@ public class ConsentRequestRepresentation {
                 consentRequest.getStatus(),
                 consentRequest.getPermission().getDataEraseAt(),
                 consentRequest.getCreatedDate(),
-                consentRequest.getCreatedDate());
+                !consentRequest.getStatus().equals(ConsentStatus.DENIED) ? dateModified: null,
+                dateModified,
+                consentRequest.getPermission(),
+                consentRequest.getHiTypes(),
+                consentArtefacts);
     }
 }
 

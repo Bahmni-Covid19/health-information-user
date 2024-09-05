@@ -35,7 +35,8 @@ public class ConsentRepository {
     private static final String SELECT_CONSENT_IDS_FROM_CONSENT_ARTIFACT = "SELECT consent_artefact_id, " +
             "consent_artefact -> 'hip' ->> 'id' as hipId, consent_artefact -> 'hip' ->> 'name' as hipName, " +
             "consent_artefact -> 'requester' ->> 'name' as requester, " +
-            "consent_artefact -> 'permission' ->> 'dataEraseAt' as consentExpiryDate, status" +
+            "consent_artefact -> 'permission' ->> 'dataEraseAt' as consentExpiryDate, status," +
+            " consent_artefact, date_modified"+
             " FROM consent_artefact WHERE consent_request_id=$1";
     private static final String INSERT_CONSENT_ARTEFACT_QUERY = "INSERT INTO " +
             "consent_artefact (consent_request_id, consent_artefact, consent_artefact_id, status, date_created)" +
@@ -56,7 +57,7 @@ public class ConsentRepository {
     private static final String SELECT_CONSENT_ARTEFACT_QUERY = "SELECT consent_artefact FROM consent_artefact WHERE " +
             "consent_artefact_id = $1 AND status = $2";
     private static final String CONSENT_REQUEST_BY_REQUESTER_ID =
-            "SELECT consent_request, status, consent_request_id FROM consent_request " +
+            "SELECT consent_request, status, consent_request_id, date_modified FROM consent_request " +
                     "where consent_request ->> 'requesterId' = $1 ORDER BY date_created DESC";
     private static final String SELECT_HIP_ID_FOR_A_CONSENT = "SELECT consent_artefact -> 'hip' ->> 'id' as hipId " +
             "FROM consent_artefact WHERE consent_artefact_id=$1";
@@ -199,12 +200,14 @@ public class ConsentRepository {
 
     private Map<String, String> toConsentDetail(Row row) {
         Map<String, String> map = new HashMap<>();
-        map.put("consentId", row.getString(0));
-        map.put("hipId", row.getString(1));
-        map.put("hipName", row.getString(2));
-        map.put("requester", row.getString(3));
-        map.put("consentExpiryDate", row.getString(4));
-        map.put(STATUS, row.getString(5));
+        map.put("consentId", row.getString("consent_artefact_id"));
+        map.put("hipId", row.getString("hipid"));
+        map.put("hipName", row.getString("hipname"));
+        map.put("requester", row.getString("requester"));
+        map.put("consentExpiryDate", row.getString("consentexpirydate"));
+        map.put(STATUS, row.getString("status"));
+        map.put("consentArtefact", row.getJsonObject("consent_artefact").toString());
+        map.put("dateModified", row.getLocalDateTime("date_modified").toString());
         return map;
     }
 
@@ -346,6 +349,7 @@ public class ConsentRepository {
                                 resultMap.put("consentRequest", consentRequest);
                                 resultMap.put(STATUS, ConsentStatus.valueOf(result.getString(STATUS)));
                                 resultMap.put("consentRequestId", result.getString("consent_request_id"));
+                                resultMap.put("dateModified", result.getLocalDateTime("date_modified"));
                                 fluxSink.next(resultMap);
                             }
                             fluxSink.complete();

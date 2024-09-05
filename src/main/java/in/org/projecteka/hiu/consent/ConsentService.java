@@ -6,14 +6,7 @@ import in.org.projecteka.hiu.ErrorRepresentation;
 import in.org.projecteka.hiu.HiuProperties;
 import in.org.projecteka.hiu.clients.GatewayServiceClient;
 import in.org.projecteka.hiu.common.cache.CacheAdapter;
-import in.org.projecteka.hiu.consent.model.ConsentNotification;
-import in.org.projecteka.hiu.consent.model.ConsentRequestData;
-import in.org.projecteka.hiu.consent.model.ConsentRequestInitResponse;
-import in.org.projecteka.hiu.consent.model.ConsentRequestRepresentation;
-import in.org.projecteka.hiu.consent.model.ConsentStatus;
-import in.org.projecteka.hiu.consent.model.ConsentStatusRequest;
-import in.org.projecteka.hiu.consent.model.GatewayConsentArtefactResponse;
-import in.org.projecteka.hiu.consent.model.HiuConsentNotificationRequest;
+import in.org.projecteka.hiu.consent.model.*;
 import in.org.projecteka.hiu.consent.model.consentmanager.ConsentRequest;
 import in.org.projecteka.hiu.patient.PatientService;
 import org.slf4j.Logger;
@@ -23,31 +16,28 @@ import reactor.core.publisher.Mono;
 
 import javax.annotation.PostConstruct;
 import java.time.LocalDateTime;
-import java.util.HashMap;
-import java.util.Map;
-import java.util.Set;
-import java.util.UUID;
+import java.util.*;
 
 import static in.org.projecteka.hiu.ClientError.consentRequestNotFound;
 import static in.org.projecteka.hiu.ErrorCode.INVALID_PURPOSE_OF_USE;
 import static in.org.projecteka.hiu.common.Constants.EMPTY_STRING;
 import static in.org.projecteka.hiu.common.Constants.STATUS;
 import static in.org.projecteka.hiu.common.Constants.getCmSuffix;
+import static in.org.projecteka.hiu.common.Serializer.to;
+import static in.org.projecteka.hiu.consent.model.ConsentArtefactRepresentation.toConsentArtefactRepresentation;
 import static in.org.projecteka.hiu.consent.model.ConsentRequestRepresentation.toConsentRequestRepresentation;
 import static in.org.projecteka.hiu.consent.model.ConsentStatus.DENIED;
 import static in.org.projecteka.hiu.consent.model.ConsentStatus.ERRORED;
 import static in.org.projecteka.hiu.consent.model.ConsentStatus.EXPIRED;
 import static in.org.projecteka.hiu.consent.model.ConsentStatus.GRANTED;
 import static in.org.projecteka.hiu.consent.model.ConsentStatus.REVOKED;
+import static in.org.projecteka.hiu.consent.model.ConsentStatus.POSTED;
 import static java.time.LocalDateTime.now;
 import static java.time.ZoneOffset.UTC;
 import static java.util.UUID.fromString;
 import static org.springframework.http.HttpStatus.INTERNAL_SERVER_ERROR;
 import static reactor.core.publisher.Flux.fromIterable;
-import static reactor.core.publisher.Mono.defer;
-import static reactor.core.publisher.Mono.empty;
-import static reactor.core.publisher.Mono.error;
-import static reactor.core.publisher.Mono.just;
+import static reactor.core.publisher.Mono.*;
 
 public class ConsentService {
     private static final Logger logger = LoggerFactory.getLogger(ConsentService.class);
@@ -156,7 +146,7 @@ public class ConsentService {
 
     private Mono<Void> updateConsentRequestStatus(ConsentRequestInitResponse consentRequestInitResponse,
                                                   ConsentStatus oldStatus) {
-        if (oldStatus.equals(ConsentStatus.POSTED)) {
+        if (oldStatus.equals(POSTED)) {
             return consentRepository.updateConsentRequestStatus(
                     consentRequestInitResponse.getResp().getRequestId(),
                     ConsentStatus.REQUESTED,
@@ -185,28 +175,62 @@ public class ConsentService {
                     var consentRequestId = (String) result.get("consentRequestId");
                     consentRequestId = consentRequestId == null ? EMPTY_STRING : consentRequestId;
                     var status = (ConsentStatus) result.get(STATUS);
+                    LocalDateTime dateModified = (LocalDateTime) result.get("dateModified");
+                    dateModified = dateModified != null ? dateModified : consentRequest.getCreatedDate();
+                    Mono<List<ConsentArtefactRepresentation>> consentArtefactRepresentations = empty();
+                    if (status == GRANTED) {
+                        consentArtefactRepresentations = getConsentArtefacts(consentRequestId).collectList();
+                    }
                     return Mono.zip(patientService.tryFind(consentRequest.getPatient().getId()),
-                            mergeWithArtefactStatus(consentRequest, status, consentRequestId),
-                            just(consentRequestId));
+                            updateConsentStatusBasedOnArtefacts(consentRequest, status, consentArtefactRepresentations),
+                            just(consentRequestId),
+                            consentArtefactRepresentations.defaultIfEmpty(Collections.emptyList()),
+                            just(dateModified));
                 })
                 .map(patientConsentRequest -> toConsentRequestRepresentation(patientConsentRequest.getT1(),
                         patientConsentRequest.getT2(),
-                        patientConsentRequest.getT3()));
+                        patientConsentRequest.getT3(), patientConsentRequest.getT4(), patientConsentRequest.getT5()));
     }
 
-    private Mono<in.org.projecteka.hiu.consent.model.ConsentRequest> mergeWithArtefactStatus(
+    private Mono<in.org.projecteka.hiu.consent.model.ConsentRequest> updateConsentStatusBasedOnArtefacts(
             in.org.projecteka.hiu.consent.model.ConsentRequest consentRequest,
             ConsentStatus reqStatus,
-            String consentRequestId) {
+            Mono<List<ConsentArtefactRepresentation>> consentArtefacts) {
         var consent = consentRequest.toBuilder().status(reqStatus).build();
-        return reqStatus.equals(ConsentStatus.POSTED)
-                ? just(consent)
-                : consentRepository.getConsentDetails(consentRequestId)
-                .take(1)
-                .next()
-                .map(map -> ConsentStatus.valueOf(map.get(STATUS)))
-                .switchIfEmpty(just(reqStatus))
-                .map(artefactStatus -> consent.toBuilder().status(artefactStatus).build());
+        if (reqStatus.equals(GRANTED)) {
+            return consentArtefacts
+                    .map(consentArtefactDetails -> {
+                        if (!consentArtefactDetails.isEmpty()) {
+                            boolean isAnyGranted = consentArtefactDetails.stream()
+                                    .anyMatch(artefact -> artefact.getStatus() == ConsentStatus.GRANTED);
+                            Permission updatedPermission = consentRequest.getPermission();
+                            updatedPermission.setDataEraseAt(consentArtefactDetails.get(0).getPermission().getDataEraseAt());
+                            return consentRequest.toBuilder()
+                                    .status(isAnyGranted ? ConsentStatus.GRANTED : consentArtefactDetails.get(0).getStatus())
+                                    .permission(updatedPermission)
+                                    .build();
+                        }
+                        return consentRequest;
+                    })
+                    .switchIfEmpty(Mono.just(consentRequest.toBuilder().status(reqStatus).build()));
+        }
+        return just(consent);
+    }
+
+    private Flux<ConsentArtefactRepresentation> getConsentArtefacts(String consentRequestId) {
+        return consentRepository.getConsentDetails(consentRequestId)
+                .map(consentArtefactDetail -> {
+                    LocalDateTime consentArtefactExpiry = LocalDateTime.parse(consentArtefactDetail.get("consentExpiryDate"));
+                    ConsentStatus consentArtefactStatus = consentArtefactExpiry.isBefore(now(UTC))
+                            ? EXPIRED
+                            : ConsentStatus.valueOf(consentArtefactDetail.get(STATUS));
+                    return toConsentArtefactRepresentation(
+                            to(consentArtefactDetail.get("consentArtefact"), ConsentArtefact.class),
+                            consentArtefactStatus,
+                            LocalDateTime.parse(consentArtefactDetail.get("dateModified"))
+                    );
+                })
+                .switchIfEmpty(empty());
     }
 
     public Mono<Void> handleNotification(HiuConsentNotificationRequest hiuNotification) {
