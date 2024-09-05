@@ -25,6 +25,9 @@ public class ConsentRequestRepresentation {
     public static ConsentRequestRepresentation toConsentRequestRepresentation(
             Patient patient,
             in.org.projecteka.hiu.consent.model.ConsentRequest consentRequest, String consentRequestId, List<ConsentArtefactRepresentation> consentArtefacts, LocalDateTime dateModified) {
+        LocalDateTime approvedDate = consentRequest.getStatus().equals(ConsentStatus.GRANTED) ||
+                consentRequest.getStatus().equals(ConsentStatus.EXPIRED) ||
+                consentRequest.getStatus().equals(ConsentStatus.REVOKED) ? dateModified: null;
         return new ConsentRequestRepresentation(
                 consentRequest.getId(),
                 consentRequestId,
@@ -35,7 +38,7 @@ public class ConsentRequestRepresentation {
                 consentRequest.getStatus(),
                 consentRequest.getPermission().getDataEraseAt(),
                 consentRequest.getCreatedDate(),
-                !consentRequest.getStatus().equals(ConsentStatus.DENIED) ? dateModified: null,
+                approvedDate,
                 dateModified,
                 consentRequest.getPermission(),
                 consentRequest.getHiTypes(),
