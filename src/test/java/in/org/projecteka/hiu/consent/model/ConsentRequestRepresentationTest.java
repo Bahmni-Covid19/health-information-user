@@ -30,6 +30,7 @@ class ConsentRequestRepresentationTest {
                 consentRequest.getId(),
                 consentRequest.getId(),
                 new PatientRepresentation(patient.getIdentifier(), patient.getFirstName(), patient.getLastName()),
+                consentRequest.getPurpose(),
                 consentRequest.getStatus(),
                 expiryAt,
                 todayAt,
