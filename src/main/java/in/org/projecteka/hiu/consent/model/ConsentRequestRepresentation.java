@@ -12,6 +12,7 @@ public class ConsentRequestRepresentation {
     String id;
     String consentRequestId;
     PatientRepresentation patient;
+    Purpose purpose;
     ConsentStatus status;
     LocalDateTime expiredDate;
     LocalDateTime createdDate;
@@ -35,6 +36,7 @@ public class ConsentRequestRepresentation {
                         patient.getIdentifier(),
                         patient.getFirstName(),
                         patient.getLastName()),
+                consentRequest.getPurpose(),
                 consentRequest.getStatus(),
                 consentRequest.getPermission().getDataEraseAt(),
                 consentRequest.getCreatedDate(),
